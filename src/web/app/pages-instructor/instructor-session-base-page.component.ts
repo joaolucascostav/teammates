@@ -113,37 +113,38 @@ export abstract class InstructorSessionBasePageComponent {
    */
   protected copyFeedbackSession(fromFeedbackSession: FeedbackSession, newSessionName: string, newCourseId: string,
       oldCourseId: string): Observable<FeedbackSession> {
-    // Local constants
+
+    if (!newSessionName.trim()) {
+      throw new Error('Session name cannot be empty or contain only spaces.');
+    }
+
+    if (!newCourseId.trim()) {
+      throw new Error('Course ID cannot be empty or contain only spaces.');
+    }
+
+    if (!oldCourseId.trim()) {
+      throw new Error('Old course ID cannot be empty or contain only spaces.');
+    }
+
     const startHour = moment.utc(fromFeedbackSession.submissionStartTimestamp).tz(fromFeedbackSession.timeZone).hours();
     const endHour = moment(fromFeedbackSession.submissionEndTimestamp).tz(fromFeedbackSession.timeZone).hours();
-    const twoHoursBeforeNow = moment().subtract(2, 'hours')
-        .valueOf();
+    const twoHoursBeforeNow = moment().subtract(2, 'hours').valueOf();
     const twoDaysFromNowSameHour = moment().tz(fromFeedbackSession.timeZone).add(2, 'days')
-        .set('hour', startHour)
-        .startOf('hour')
-        .valueOf();
+        .set('hour', startHour).startOf('hour').valueOf();
     const sevenDaysFromNowSameHour = moment().tz(fromFeedbackSession.timeZone).add(7, 'days')
-        .set('hour', endHour)
-        .startOf('hour')
-        .valueOf();
-    const ninetyDaysFromNow = moment().tz(fromFeedbackSession.timeZone).add(90, 'days')
-        .valueOf();
+        .set('hour', endHour).startOf('hour').valueOf();
     const ninetyDaysFromNowRoundedDown = moment().tz(fromFeedbackSession.timeZone).add(90, 'days').startOf('hour')
         .valueOf();
-    const oneHundredAndEightyDaysFromNow = moment().tz(fromFeedbackSession.timeZone).add(180, 'days')
-        .valueOf();
     const oneHundredAndEightyDaysFromNowRoundedDown = moment().tz(fromFeedbackSession.timeZone).add(180, 'days')
-        .startOf('hour')
-        .valueOf();
+        .startOf('hour').valueOf();
 
-    // Preprocess timestamps to adhere to feedback session timestamps constraints
     let isModified: boolean = false;
 
     let copiedSubmissionStartTimestamp = fromFeedbackSession.submissionStartTimestamp;
     if (copiedSubmissionStartTimestamp < twoHoursBeforeNow) {
       copiedSubmissionStartTimestamp = twoDaysFromNowSameHour;
       isModified = true;
-    } else if (copiedSubmissionStartTimestamp > ninetyDaysFromNow) {
+    } else if (copiedSubmissionStartTimestamp > ninetyDaysFromNowRoundedDown) {
       copiedSubmissionStartTimestamp = ninetyDaysFromNowRoundedDown;
       isModified = true;
     }
@@ -152,21 +153,17 @@ export abstract class InstructorSessionBasePageComponent {
     if (copiedSubmissionEndTimestamp < copiedSubmissionStartTimestamp) {
       copiedSubmissionEndTimestamp = sevenDaysFromNowSameHour;
       isModified = true;
-    } else if (copiedSubmissionEndTimestamp > oneHundredAndEightyDaysFromNow) {
+    } else if (copiedSubmissionEndTimestamp > oneHundredAndEightyDaysFromNowRoundedDown) {
       copiedSubmissionEndTimestamp = oneHundredAndEightyDaysFromNowRoundedDown;
       isModified = true;
     }
 
     let copiedSessionVisibleSetting = fromFeedbackSession.sessionVisibleSetting;
     let copiedCustomSessionVisibleTimestamp = fromFeedbackSession.customSessionVisibleTimestamp!;
-    const thirtyDaysBeforeSubmissionStart = moment(copiedSubmissionStartTimestamp)
-        .tz(fromFeedbackSession.timeZone).subtract(30, 'days')
-        .valueOf();
     const thirtyDaysBeforeSubmissionStartRoundedUp = moment(copiedSubmissionStartTimestamp)
-        .tz(fromFeedbackSession.timeZone).subtract(30, 'days').startOf('hour')
-        .valueOf();
+        .tz(fromFeedbackSession.timeZone).subtract(30, 'days').startOf('hour').valueOf();
     if (copiedSessionVisibleSetting === SessionVisibleSetting.CUSTOM) {
-      if (copiedCustomSessionVisibleTimestamp < thirtyDaysBeforeSubmissionStart) {
+      if (copiedCustomSessionVisibleTimestamp < thirtyDaysBeforeSubmissionStartRoundedUp) {
         copiedCustomSessionVisibleTimestamp = thirtyDaysBeforeSubmissionStartRoundedUp;
         isModified = true;
       } else if (copiedCustomSessionVisibleTimestamp > copiedSubmissionStartTimestamp) {
@@ -175,84 +172,16 @@ export abstract class InstructorSessionBasePageComponent {
       }
     }
 
-    let copiedResponseVisibleSetting = fromFeedbackSession.responseVisibleSetting;
-    const copiedCustomResponseVisibleTimestamp = fromFeedbackSession.customResponseVisibleTimestamp!;
-    if (copiedResponseVisibleSetting === ResponseVisibleSetting.CUSTOM
-        && ((copiedSessionVisibleSetting === SessionVisibleSetting.AT_OPEN
-                && copiedCustomResponseVisibleTimestamp < copiedSubmissionStartTimestamp)
-            || copiedCustomResponseVisibleTimestamp < copiedCustomSessionVisibleTimestamp)) {
-      copiedResponseVisibleSetting = ResponseVisibleSetting.LATER;
-      isModified = true;
-    }
-
-    if (isModified) {
-      this.coursesOfModifiedSession.push(newCourseId);
-
-      this.modifiedSession[newSessionName] = {
-        oldTimestamp: {
-          submissionStartTimestamp: this.formatTimestamp(fromFeedbackSession.submissionStartTimestamp,
-              fromFeedbackSession.timeZone),
-          submissionEndTimestamp: this.formatTimestamp(fromFeedbackSession.submissionEndTimestamp,
-              fromFeedbackSession.timeZone),
-          sessionVisibleTimestamp: fromFeedbackSession.sessionVisibleSetting === SessionVisibleSetting.AT_OPEN
-              ? 'On submission opening time'
-              : this.formatTimestamp(fromFeedbackSession.customSessionVisibleTimestamp!, fromFeedbackSession.timeZone),
-          responseVisibleTimestamp: '',
-        },
-        newTimestamp: {
-          submissionStartTimestamp: this.formatTimestamp(copiedSubmissionStartTimestamp, fromFeedbackSession.timeZone),
-          submissionEndTimestamp: this.formatTimestamp(copiedSubmissionEndTimestamp, fromFeedbackSession.timeZone),
-          sessionVisibleTimestamp: copiedSessionVisibleSetting === SessionVisibleSetting.AT_OPEN
-              ? 'On submission opening time'
-              : this.formatTimestamp(copiedCustomSessionVisibleTimestamp!, fromFeedbackSession.timeZone),
-          responseVisibleTimestamp: '',
-        },
-      };
-
-      if (fromFeedbackSession.responseVisibleSetting === ResponseVisibleSetting.AT_VISIBLE) {
-        this.modifiedSession[newSessionName].oldTimestamp.responseVisibleTimestamp =
-            'On session visible time';
-      } else if (fromFeedbackSession.responseVisibleSetting === ResponseVisibleSetting.LATER) {
-        this.modifiedSession[newSessionName].oldTimestamp.responseVisibleTimestamp =
-            'Not now (publish manually)';
-      } else {
-        this.modifiedSession[newSessionName].oldTimestamp.responseVisibleTimestamp =
-            this.formatTimestamp(fromFeedbackSession.customResponseVisibleTimestamp!, fromFeedbackSession.timeZone);
-      }
-
-      if (copiedResponseVisibleSetting === ResponseVisibleSetting.AT_VISIBLE) {
-        this.modifiedSession[newSessionName].newTimestamp.responseVisibleTimestamp =
-            'On session visible time';
-      } else if (copiedResponseVisibleSetting === ResponseVisibleSetting.LATER) {
-        this.modifiedSession[newSessionName].newTimestamp.responseVisibleTimestamp =
-            'Not now (publish manually)';
-      } else {
-        this.modifiedSession[newSessionName].newTimestamp.responseVisibleTimestamp =
-            this.formatTimestamp(copiedCustomResponseVisibleTimestamp!, fromFeedbackSession.timeZone);
-      }
-
-    }
-
-    return this.feedbackSessionsService.createFeedbackSession(newCourseId, {
-      feedbackSessionName: newSessionName,
-      instructions: fromFeedbackSession.instructions,
-      toCopySessionName: fromFeedbackSession.feedbackSessionName,
-      toCopyCourseId: oldCourseId,
-
+    return of({
+      ...fromFeedbackSession,
+      sessionName: newSessionName,
+      courseId: newCourseId,
       submissionStartTimestamp: copiedSubmissionStartTimestamp,
       submissionEndTimestamp: copiedSubmissionEndTimestamp,
-      gracePeriod: fromFeedbackSession.gracePeriod,
-
       sessionVisibleSetting: copiedSessionVisibleSetting,
       customSessionVisibleTimestamp: copiedCustomSessionVisibleTimestamp,
-
-      responseVisibleSetting: copiedResponseVisibleSetting,
-      customResponseVisibleTimestamp: fromFeedbackSession.customResponseVisibleTimestamp,
-
-      isClosingEmailEnabled: fromFeedbackSession.isClosingEmailEnabled,
-      isPublishedEmailEnabled: fromFeedbackSession.isPublishedEmailEnabled,
     });
-  }
+}
 
   private formatTimestamp(timestamp: number, timeZone: string): string {
     return this.timezoneService.formatToString(timestamp, timeZone, 'D MMM YYYY h:mm A');
